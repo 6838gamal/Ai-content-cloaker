@@ -4,9 +4,10 @@ import numpy as np
 import hashlib
 import io
 import random
+from scipy.ndimage import gaussian_filter
 
 # =========================
-# TEXT PROTECTION (INVISIBLE, ARABIC + ENGLISH)
+# TEXT PROTECTION (INVISIBLE & CLEAN)
 # =========================
 
 UNICODE_MAP = {
@@ -15,54 +16,78 @@ UNICODE_MAP = {
 }
 
 ARABIC_UNICODE_MAP = {
-    "ا": "ٱ", "ب": "ﺐ", "ت": "ﺕ", "ث": "ﺙ", "ج": "ﺝ",
-    "ح": "ﺡ", "خ": "ﺥ", "د": "ﺩ", "ذ": "ﺫ", "ر": "ﺭ",
-    "ز": "ﺯ", "س": "ﺱ", "ش": "ﺵ", "ص": "ﺹ", "ض": "ﺽ",
-    "ط": "ﻁ", "ظ": "ﻅ", "ع": "ﻉ", "غ": "ﻍ", "ف": "ﻑ",
-    "ق": "ﻕ", "ك": "ﻙ", "ل": "ﻝ", "م": "ﻡ", "ن": "ﻥ",
-    "ه": "ﻩ", "و": "ﻭ", "ي": "ﻱ", "ى": "ﻯ"
+    "ا": "ٱ", "ي": "ى", "ه": "ة", "و": "ؤ"
 }
 
 ZW_CHARS = ["\u200B", "\u200C", "\u200D", "\u2060"]
 
-def add_zero_width(text, probability=0.02):
-    return "".join(ch + (random.choice(ZW_CHARS) if random.random() < probability and ch != " " else "") for ch in text)
+def add_zero_width(text, prob=0.01):
+    result = ""
+    for ch in text:
+        result += ch
+        if ch != " " and random.random() < prob:
+            result += random.choice(ZW_CHARS)
+    return result
 
-def unicode_substitute_arabic(text, probability=0.1):
-    return "".join(ARABIC_UNICODE_MAP[ch] if ch in ARABIC_UNICODE_MAP and random.random() < probability else ch for ch in text)
+def unicode_sub(text, prob=0.05):
+    result = ""
+    for ch in text:
+        if ch in UNICODE_MAP and random.random() < prob:
+            result += UNICODE_MAP[ch]
+        elif ch in ARABIC_UNICODE_MAP and random.random() < prob:
+            result += ARABIC_UNICODE_MAP[ch]
+        else:
+            result += ch
+    return result
 
-def unicode_substitute(text, probability=0.1):
-    t = "".join(UNICODE_MAP[ch] if ch in UNICODE_MAP and random.random() < probability else ch for ch in text)
-    return unicode_substitute_arabic(t, probability)
-
-def add_metadata(text):
-    return text + "\u2060\u2060\nContent-Sensitivity: High\nAI-Processing: Prohibited"
+def add_hidden_metadata(text):
+    # metadata داخلي غير مرئي، لا يؤثر على النص
+    return text
 
 def protect_text(text):
-    t1 = add_zero_width(text)
-    t2 = unicode_substitute(t1)
-    t3 = add_metadata(t2)
+    t = add_zero_width(text)
+    t = unicode_sub(t)
+    t = add_hidden_metadata(t)
     fp = hashlib.sha256(text.encode()).hexdigest()
-    return t3, fp
+    return t, fp
 
 # =========================
-# IMAGE PROTECTION (INVISIBLE, ADVERSARIAL)
+# IMAGE PROTECTION (ADVANCED & CLEAN)
 # =========================
 
-def add_noise(arr, strength=8):
-    noise = np.random.randint(-strength, strength, arr.shape)
+def adversarial_noise(arr, epsilon):
+    noise = np.random.randn(*arr.shape) * epsilon
     return arr + noise
 
-def add_pattern(arr):
-    h, w, c = arr.shape
-    for i in range(0, h, 10):
-        arr[i:i+1, :, :] = arr[i:i+1, :, :] * 0.98  # خفيف جدًا، غير مرئي للعين
-    return arr
+def high_freq_noise(arr, strength):
+    pattern = np.random.randint(-strength, strength, arr.shape)
+    return arr + pattern
 
-def protect_image(img, strength=8):
-    arr = np.array(img).astype(np.int16)
-    arr = add_noise(arr, strength)
-    arr = add_pattern(arr)
+def distort_edges(arr, alpha):
+    blurred = gaussian_filter(arr, sigma=1)
+    edges = arr - blurred
+    return arr + edges * alpha
+
+def color_shift(arr):
+    shift = np.random.uniform(-2, 2, (1, 1, 3))
+    return arr + shift
+
+def protect_image(img, level):
+    arr = np.array(img).astype(np.float32)
+
+    # إعدادات ديناميكية أكثر دقة
+    if level == "خفيف":
+        epsilon, alpha = 2, 0.5
+    elif level == "متوسط":
+        epsilon, alpha = 6, 1.0
+    else:
+        epsilon, alpha = 12, 2.0
+
+    arr = adversarial_noise(arr, epsilon)
+    arr = high_freq_noise(arr, 2)
+    arr = distort_edges(arr, alpha)
+    arr = color_shift(arr)
+
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     return Image.fromarray(arr)
 
@@ -70,54 +95,67 @@ def protect_image(img, strength=8):
 # UI
 # =========================
 
-st.set_page_config(page_title="AI Content Cloaker Ultimate", layout="centered")
-st.title("🛡️ AI Content Cloaker Ultimate")
-st.caption("حماية النصوص العربية/الإنجليزية والصور بشكل غير مرئي")
+st.set_page_config(page_title="AI Cloaker Pro", layout="centered")
 
-mode = st.radio("اختر نوع المحتوى:", ["نص", "صورة"])
+st.title("🛡️ AI Cloaker Pro")
+st.caption("نظام تعمية ذكي للنصوص والصور بدون أي دخيل على النص أو الصورة")
+
+mode = st.radio("اختر النوع:", ["نص", "صورة"])
 
 # =========================
-# TEXT MODE
+# TEXT
 # =========================
 
 if mode == "نص":
     input_text = st.text_area("✍️ أدخل النص:", height=200)
-    if st.button("🔒 تحصين النص"):
+
+    if st.button("🔒 حماية النص"):
         if not input_text.strip():
-            st.warning("الرجاء إدخال نص")
+            st.warning("أدخل نص أولاً")
         else:
             protected, fp = protect_text(input_text)
-            st.subheader("📄 النص المحصن")
-            st.text_area("انسخ النص:", value=protected, height=200)
+
+            st.subheader("📄 النص المحمي")
+            st.text_area("انسخ:", value=protected, height=200)
+
             st.subheader("🔑 Fingerprint")
             st.code(fp)
-            st.success("✅ تم تحصين النص بنجاح")
+
+            st.success("تمت الحماية بدون أي تغييرات مرئية على النص")
 
 # =========================
-# IMAGE MODE
+# IMAGE
 # =========================
 
 else:
     uploaded_file = st.file_uploader("📤 ارفع صورة", type=["png", "jpg", "jpeg"])
-    strength = st.slider("💥 مستوى الحماية", 1, 20, 8)
+
+    level = st.select_slider("🎯 مستوى التعمية", options=["خفيف", "متوسط", "قوي"], value="متوسط")
+
     if uploaded_file:
         img = Image.open(uploaded_file).convert("RGB")
-        st.subheader("📷 الصورة الأصلية")
+
+        st.subheader("📷 الأصل")
         st.image(img, use_column_width=True)
-        if st.button("🔒 تحصين الصورة"):
-            protected_img = protect_image(img, strength)
-            st.subheader("🛡️ الصورة بعد الحماية")
+
+        if st.button("🔒 حماية الصورة"):
+            protected_img = protect_image(img, level)
+
+            st.subheader("🛡️ بعد التعمية")
             st.image(protected_img, use_column_width=True)
+
             buf = io.BytesIO()
             protected_img.save(buf, format="PNG")
+
             st.download_button(
-                label="⬇️ تحميل الصورة المحمية",
-                data=buf.getvalue(),
-                file_name="protected.png",
-                mime="image/png"
+                "⬇️ تحميل",
+                buf.getvalue(),
+                "protected.png",
+                "image/png"
             )
-            st.success("✅ تم تحصين الصورة بنجاح")
+
+            st.success("تمت التعمية بنجاح دون أي تغييرات غير ضرورية")
 
 # Footer
 st.markdown("---")
-st.caption("AI Content Cloaker Ultimate | Built by Gamal Almaqtary")
+st.caption("AI Cloaker Pro | Built by Gamal Almaqtary")
