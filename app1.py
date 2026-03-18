@@ -1,21 +1,19 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageFilter
 import numpy as np
 import hashlib
 import io
 import random
 
 # =========================
-# TEXT PROTECTION (INVISIBLE, ARABIC + ENGLISH)
+# TEXT PROTECTION (ARABIC + ENGLISH)
 # =========================
 
-# Unicode substitutions الإنجليزية
 UNICODE_MAP = {
     "A": "Α", "a": "ɑ", "o": "〇", "e": "℮", 
     "i": "ι", "s": "ѕ", "c": "ϲ", "r": "я"
 }
 
-# Unicode substitutions العربية
 ARABIC_UNICODE_MAP = {
     "ا": "ٱ", "ب": "ﺐ", "ت": "ﺕ", "ث": "ﺙ", "ج": "ﺝ",
     "ح": "ﺡ", "خ": "ﺥ", "د": "ﺩ", "ذ": "ﺫ", "ر": "ﺭ",
@@ -45,7 +43,7 @@ def unicode_substitute(text):
     return t
 
 def add_metadata(text):
-    # Metadata مخفية داخليًا
+    # Metadata مخفية داخليًا، غير مرئية للمستخدم
     return text + "\n\nContent-Sensitivity: High\nAI-Processing: Prohibited"
 
 def protect_text(text):
@@ -56,34 +54,40 @@ def protect_text(text):
     return t3, fp
 
 # =========================
-# IMAGE PROTECTION (INVISIBLE)
+# IMAGE PROTECTION (ADVANCED)
 # =========================
 
-def add_noise(arr, strength=10):
-    noise = np.random.randint(-strength, strength, arr.shape)
+def add_noise(arr, strength=8):
+    noise = np.random.randint(-strength, strength + 1, arr.shape)
     return arr + noise
 
-def add_pattern(arr):
+def add_high_freq_pattern(arr, alpha=1):
     h, w, c = arr.shape
-    for i in range(0, h, 10):
-        arr[i:i+1, :, :] = arr[i:i+1, :, :] * 0.98  # خفيف جدًا، غير مرئي للعين
+    pattern = np.random.randint(-alpha, alpha + 1, (h, w, c))
+    return arr + pattern
+
+def add_edge_perturbation(arr, alpha=1):
+    # خفيف جدًا، لا يظهر للعين البشرية
+    from scipy.ndimage import gaussian_gradient_magnitude
+    edges = gaussian_gradient_magnitude(arr.astype(np.float32), sigma=1)
+    arr = arr + (edges * alpha).astype(np.int16)
     return arr
 
 def protect_image(img, strength=8):
     arr = np.array(img).astype(np.int16)
     arr = add_noise(arr, strength)
-    arr = add_pattern(arr)
+    arr = add_high_freq_pattern(arr, alpha=1)
+    arr = add_edge_perturbation(arr, alpha=1)
     arr = np.clip(arr, 0, 255).astype(np.uint8)
-    img_protected = Image.fromarray(arr)
-    return img_protected
+    return Image.fromarray(arr)
 
 # =========================
 # UI
 # =========================
 
-st.set_page_config(page_title="AI Content Cloaker Silent", layout="centered")
-st.title("🛡️ AI Content Cloaker Silent")
-st.caption("حماية النصوص العربية/الإنجليزية والصور بدون أي عناصر للمستخدم")
+st.set_page_config(page_title="AI Content Cloaker Ultra", layout="centered")
+st.title("🛡️ AI Content Cloaker Ultra")
+st.caption("حماية النصوص العربية/الإنجليزية والصور بدون أي علامات للمستخدم")
 
 mode = st.radio("اختر نوع المحتوى:", ["نص", "صورة"])
 
@@ -123,4 +127,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption("AI Content Cloaker Silent | Built by Gamal Almaqtary")
+st.caption("AI Content Cloaker Ultra | Built by Gamal Almaqtary")
