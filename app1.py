@@ -1,16 +1,16 @@
 import streamlit as st
-from PIL import Image, ImageFilter
+from PIL import Image
 import numpy as np
 import hashlib
 import io
 import random
 
 # =========================
-# TEXT PROTECTION (ARABIC + ENGLISH)
+# TEXT PROTECTION (INVISIBLE, ARABIC + ENGLISH)
 # =========================
 
 UNICODE_MAP = {
-    "A": "Α", "a": "ɑ", "o": "〇", "e": "℮", 
+    "A": "Α", "a": "ɑ", "o": "〇", "e": "℮",
     "i": "ι", "s": "ѕ", "c": "ϲ", "r": "я"
 }
 
@@ -25,26 +25,18 @@ ARABIC_UNICODE_MAP = {
 
 ZW_CHARS = ["\u200B", "\u200C", "\u200D", "\u2060"]
 
-def add_zero_width(text):
-    return "".join(ch + random.choice(ZW_CHARS) for ch in text)
+def add_zero_width(text, probability=0.02):
+    return "".join(ch + (random.choice(ZW_CHARS) if random.random() < probability and ch != " " else "") for ch in text)
 
-def unicode_substitute_arabic(text):
-    result = ""
-    for ch in text:
-        if ch in ARABIC_UNICODE_MAP and random.random() > 0.5:
-            result += ARABIC_UNICODE_MAP[ch]
-        else:
-            result += ch
-    return result
+def unicode_substitute_arabic(text, probability=0.1):
+    return "".join(ARABIC_UNICODE_MAP[ch] if ch in ARABIC_UNICODE_MAP and random.random() < probability else ch for ch in text)
 
-def unicode_substitute(text):
-    t = "".join(UNICODE_MAP.get(ch, ch) for ch in text)
-    t = unicode_substitute_arabic(t)
-    return t
+def unicode_substitute(text, probability=0.1):
+    t = "".join(UNICODE_MAP[ch] if ch in UNICODE_MAP and random.random() < probability else ch for ch in text)
+    return unicode_substitute_arabic(t, probability)
 
 def add_metadata(text):
-    # Metadata مخفية داخليًا، غير مرئية للمستخدم
-    return text + "\n\nContent-Sensitivity: High\nAI-Processing: Prohibited"
+    return text + "\u2060\u2060\nContent-Sensitivity: High\nAI-Processing: Prohibited"
 
 def protect_text(text):
     t1 = add_zero_width(text)
@@ -54,30 +46,23 @@ def protect_text(text):
     return t3, fp
 
 # =========================
-# IMAGE PROTECTION (ADVANCED)
+# IMAGE PROTECTION (INVISIBLE, ADVERSARIAL)
 # =========================
 
 def add_noise(arr, strength=8):
-    noise = np.random.randint(-strength, strength + 1, arr.shape)
+    noise = np.random.randint(-strength, strength, arr.shape)
     return arr + noise
 
-def add_high_freq_pattern(arr, alpha=1):
+def add_pattern(arr):
     h, w, c = arr.shape
-    pattern = np.random.randint(-alpha, alpha + 1, (h, w, c))
-    return arr + pattern
-
-def add_edge_perturbation(arr, alpha=1):
-    # خفيف جدًا، لا يظهر للعين البشرية
-    from scipy.ndimage import gaussian_gradient_magnitude
-    edges = gaussian_gradient_magnitude(arr.astype(np.float32), sigma=1)
-    arr = arr + (edges * alpha).astype(np.int16)
+    for i in range(0, h, 10):
+        arr[i:i+1, :, :] = arr[i:i+1, :, :] * 0.98  # خفيف جدًا، غير مرئي للعين
     return arr
 
 def protect_image(img, strength=8):
     arr = np.array(img).astype(np.int16)
     arr = add_noise(arr, strength)
-    arr = add_high_freq_pattern(arr, alpha=1)
-    arr = add_edge_perturbation(arr, alpha=1)
+    arr = add_pattern(arr)
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     return Image.fromarray(arr)
 
@@ -85,11 +70,15 @@ def protect_image(img, strength=8):
 # UI
 # =========================
 
-st.set_page_config(page_title="AI Content Cloaker Ultra", layout="centered")
-st.title("🛡️ AI Content Cloaker Ultra")
-st.caption("حماية النصوص العربية/الإنجليزية والصور بدون أي علامات للمستخدم")
+st.set_page_config(page_title="AI Content Cloaker Ultimate", layout="centered")
+st.title("🛡️ AI Content Cloaker Ultimate")
+st.caption("حماية النصوص العربية/الإنجليزية والصور بشكل غير مرئي")
 
 mode = st.radio("اختر نوع المحتوى:", ["نص", "صورة"])
+
+# =========================
+# TEXT MODE
+# =========================
 
 if mode == "نص":
     input_text = st.text_area("✍️ أدخل النص:", height=200)
@@ -102,7 +91,11 @@ if mode == "نص":
             st.text_area("انسخ النص:", value=protected, height=200)
             st.subheader("🔑 Fingerprint")
             st.code(fp)
-            st.success("✅ تم تحصين النص")
+            st.success("✅ تم تحصين النص بنجاح")
+
+# =========================
+# IMAGE MODE
+# =========================
 
 else:
     uploaded_file = st.file_uploader("📤 ارفع صورة", type=["png", "jpg", "jpeg"])
@@ -123,8 +116,8 @@ else:
                 file_name="protected.png",
                 mime="image/png"
             )
-            st.success("✅ تم تحصين الصورة")
+            st.success("✅ تم تحصين الصورة بنجاح")
 
 # Footer
 st.markdown("---")
-st.caption("AI Content Cloaker Ultra | Built by Gamal Almaqtary")
+st.caption("AI Content Cloaker Ultimate | Built by Gamal Almaqtary")
