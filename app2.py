@@ -3,116 +3,95 @@ from PIL import Image
 import numpy as np
 import io
 import cv2
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 # =========================
-# ADVERSARIAL NETWORK (ULTRA STEALTH)
+# IMAGE PROCESSING
 # =========================
-class TinyAdversarialCNN(nn.Module):
-    """شبكة عصبية صغيرة لتوليد ضوضاء adversarial خفية"""
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 8, 3, padding=1)
-        self.conv2 = nn.Conv2d(8, 16, 3, padding=1)
-        self.conv3 = nn.Conv2d(16, 3, 3, padding=1)
-        self.tanh = nn.Tanh()
-    
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = self.tanh(self.conv3(x))  # قيمة بين -1 و 1
-        return x
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-adv_model = TinyAdversarialCNN().to(device)
-adv_model.eval()  # فقط لتوليد الضوضاء
-
-# =========================
-# IMAGE PROTECTION PIPELINE
-# =========================
-def apply_micro_warp_edges(arr, strength=0.2):
-    gray = cv2.cvtColor((arr*255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    edges = cv2.Canny(gray, 100, 200).astype(bool)
+def micro_warp(arr, strength=1.0):
     h, w, c = arr.shape
-    dx = (np.random.rand(h, w)-0.5)*2*strength
-    dy = (np.random.rand(h, w)-0.5)*2*strength
+    dx = (np.random.rand(h, w) - 0.5) * strength
+    dy = (np.random.rand(h, w) - 0.5) * strength
     x, y = np.meshgrid(np.arange(w), np.arange(h))
-    map_x = (x + dx*edges).astype(np.float32)
-    map_y = (y + dy*edges).astype(np.float32)
+    map_x = (x + dx).astype(np.float32)
+    map_y = (y + dy).astype(np.float32)
     return cv2.remap(arr, map_x, map_y, interpolation=cv2.INTER_LINEAR)
 
-def apply_high_freq_pattern(arr, strength=0.003):
-    h, w, c = arr.shape
-    pattern = np.sin(np.linspace(0, 100, w))
-    pattern = np.tile(pattern, (h,1))
-    pattern = np.expand_dims(pattern,2)
-    return arr + pattern * strength
+def high_freq_noise(arr, intensity):
+    noise = np.random.randn(*arr.shape) * (0.02 * intensity)
+    return arr + noise
 
-def apply_freq_scramble(arr, strength=0.01):
+def frequency_scramble(arr, intensity):
     fft = np.fft.fft2(arr, axes=(0,1))
     fft_shift = np.fft.fftshift(fft)
+
     h, w, c = arr.shape
-    mask = np.zeros((h,w))
-    mask[h//2-15:h//2+15, w//2-15:w//2+15] = 1
-    fft_shift *= (1 - strength*mask[:,:,np.newaxis])
+    mask = np.random.rand(h, w) < (0.05 * intensity)
+    fft_shift[mask] *= (0.8 + np.random.rand())
+
     return np.fft.ifft2(np.fft.ifftshift(fft_shift), axes=(0,1)).real
 
-def protect_image_final(img, level="متوسط"):
-    arr = np.array(img).astype(np.float32)/255.0  # ← مهم float32
-    h, w, c = arr.shape
+def jpeg_artifacts(arr, quality):
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+    _, encimg = cv2.imencode('.jpg', (arr*255).astype(np.uint8), encode_param)
+    decimg = cv2.imdecode(encimg, 1).astype(np.float32) / 255.0
+    return decimg
 
-    # ضبط القوة حسب المستوى
-    if level=="خفيف":
-        eps, warp, pattern, freq = 0.001, 0.1, 0.001, 0.003
-    elif level=="متوسط":
-        eps, warp, pattern, freq = 0.002, 0.2, 0.003, 0.005
-    else:  # قوي
-        eps, warp, pattern, freq = 0.004, 0.35, 0.005, 0.008
+def protect_image(img, intensity=0.5, quality=85):
+    arr = np.array(img).astype(np.float32) / 255.0
 
-    # 1️⃣ Micro Warp على الحواف
-    arr = apply_micro_warp_edges(arr, warp)
-
-    # 2️⃣ High-Frequency Pattern
-    arr = apply_high_freq_pattern(arr, pattern)
-
-    # 3️⃣ Adversarial Noise من الشبكة العصبية
-    tensor_img = torch.tensor(arr.transpose(2,0,1), dtype=torch.float32).unsqueeze(0).to(device)  # ← float32
-    with torch.no_grad():
-        perturb = adv_model(tensor_img) * eps
-        adv_img = tensor_img + perturb
-        adv_img = torch.clamp(adv_img, 0.0, 1.0)
-    arr = adv_img.squeeze(0).cpu().numpy().transpose(1,2,0)
-
-    # 4️⃣ Frequency Scramble خفيف
-    arr = apply_freq_scramble(arr, freq)
+    # تطبيق المعالجات
+    arr = micro_warp(arr, 1.5 * intensity)
+    arr = high_freq_noise(arr, intensity)
+    arr = frequency_scramble(arr, intensity)
+    arr = jpeg_artifacts(arr, quality)
 
     arr = np.clip(arr, 0, 1)
-    return Image.fromarray((arr*255).astype(np.uint8))
+    return Image.fromarray((arr * 255).astype(np.uint8))
 
 # =========================
 # STREAMLIT UI
 # =========================
-st.set_page_config(page_title="Ultimate AI Image Cloaker", layout="centered")
-st.title("🛡️ Ultimate AI Image Cloaker (Final)")
-st.caption("حماية الصور ضد أي تحليل AI بدون أي تأثير على البشر")
 
+st.set_page_config(page_title="AI Cloaker Pro", layout="centered")
+
+st.title("🛡️ AI Image Cloaker Pro")
+st.caption("حماية الصور ضد تحليل الذكاء الاصطناعي مع الحفاظ على الجودة")
+
+# رفع الصورة
 uploaded_file = st.file_uploader("📤 ارفع صورة", type=["png","jpg","jpeg"])
-level = st.selectbox("🎯 مستوى الحماية", ["خفيف","متوسط","قوي"])
 
+# إعدادات
+intensity = st.slider("🎛️ قوة الحماية (Intensity)", 0.0, 1.0, 0.5)
+quality = st.slider("🧩 جودة الصورة (JPEG Quality)", 50, 100, 85)
+
+# عرض
 if uploaded_file:
     img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="📷 الصورة الأصلية", width=600)
 
-    if st.button("🔒 حماية الصورة"):
-        protected_img = protect_image_final(img, level)
-        st.image(protected_img, caption="🛡️ الصورة بعد الحماية", width=600)
+    col1, col2 = st.columns(2)
 
+    with col1:
+        st.image(img, caption="📷 الأصل", width=300)
+
+    if st.button("🔒 تطبيق الحماية"):
+        protected = protect_image(img, intensity, quality)
+
+        with col2:
+            st.image(protected, caption="🛡️ بعد الحماية", width=300)
+
+        # تحميل
         buf = io.BytesIO()
-        protected_img.save(buf, format="PNG")
-        st.download_button("⬇️ تحميل الصورة المحمية", buf.getvalue(), "protected.png", "image/png")
-        st.success("✅ تمت حماية الصورة بنجاح")
+        protected.save(buf, format="PNG")
+
+        st.download_button(
+            "⬇️ تحميل الصورة",
+            buf.getvalue(),
+            "protected.png",
+            "image/png"
+        )
+
+        st.success("✅ تمت الحماية بنجاح")
 
 st.markdown("---")
-st.caption("Ultimate AI Image Cloaker | Built by Gamal Almaqtary")
+st.caption("AI Cloaker Pro | Built by Gamal Almaqtary")

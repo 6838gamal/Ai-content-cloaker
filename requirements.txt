@@ -3,4 +3,4 @@ pillow
 numpy
 scipy
 opencv-python
-torch
+#torch
