@@ -58,27 +58,40 @@ def selective_blur(arr, intensity=0.5):
     arr[mask] = blurred[mask]
     return arr
 
-def protect_image_smart(img, intensity=0.5, quality=85):
+# =========================
+# ADAPTIVE PROTECTION FUNCTION
+# =========================
+def adaptive_protect(img, intensity=0.5, quality=85):
     arr = np.array(img).astype(np.float32)/255.0
+    result = arr.copy()
 
-    # === Smart pipeline ===
-    arr = micro_warp(arr, 1.5 * intensity)
-    arr = grid_warp(arr, intensity)
-    arr = edge_break(arr, intensity)
-    arr = selective_blur(arr, intensity)
-    arr = high_freq_noise(arr, intensity)
-    arr = jpeg_artifacts(arr, quality)
-
-    arr = np.clip(arr, 0, 1)
-    return Image.fromarray((arr*255).astype(np.uint8))
+    # === Simple mask for text/objects (lightweight) ===
+    gray = cv2.cvtColor((arr*255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    _, mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+    mask = mask.astype(bool)
+    
+    # === Apply heavier protection only on mask ===
+    protected_region = micro_warp(arr, 2*intensity)
+    protected_region = grid_warp(protected_region, 2*intensity)
+    protected_region = edge_break(protected_region, 2*intensity)
+    protected_region = selective_blur(protected_region, 2*intensity)
+    protected_region = high_freq_noise(protected_region, 2*intensity)
+    
+    result[mask] = protected_region[mask]
+    
+    # === Final JPEG artifacts on whole image ===
+    result = jpeg_artifacts(result, quality)
+    
+    result = np.clip(result, 0, 1)
+    return Image.fromarray((result*255).astype(np.uint8))
 
 # =========================
 # STREAMLIT UI
 # =========================
 
 st.set_page_config(page_title="AI Cloaker Pro", layout="centered")
-st.title("🛡️ AI Cloaker Pro – Smart Version")
-st.caption("حماية ذكية للصور ضد تحليل الذكاء الاصطناعي مع الحفاظ على شكلها الطبيعي")
+st.title("🛡️ AI Cloaker Pro – Adaptive Version")
+st.caption("حماية ذكية وذكية جزئيًا للنصوص والكائنات، مع الحفاظ على شكل طبيعي للعين البشرية")
 
 # Upload image
 uploaded_file = st.file_uploader("📤 ارفع صورة", type=["png","jpg","jpeg"])
@@ -95,7 +108,7 @@ if uploaded_file:
         st.image(img, caption="📷 الصورة الأصلية", width=300)
 
     if st.button("🔒 حماية الصورة"):
-        protected = protect_image_smart(img, intensity, quality)
+        protected = adaptive_protect(img, intensity, quality)
         with col2:
             st.image(protected, caption="🛡️ بعد الحماية", width=300)
 
