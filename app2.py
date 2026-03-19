@@ -60,7 +60,7 @@ def apply_freq_scramble(arr, strength=0.01):
     return np.fft.ifft2(np.fft.ifftshift(fft_shift), axes=(0,1)).real
 
 def protect_image_final(img, level="متوسط"):
-    arr = np.array(img).astype(np.float32)/255.0
+    arr = np.array(img).astype(np.float32)/255.0  # ← مهم float32
     h, w, c = arr.shape
 
     # ضبط القوة حسب المستوى
@@ -78,7 +78,7 @@ def protect_image_final(img, level="متوسط"):
     arr = apply_high_freq_pattern(arr, pattern)
 
     # 3️⃣ Adversarial Noise من الشبكة العصبية
-    tensor_img = torch.tensor(arr.transpose(2,0,1)).unsqueeze(0).to(device)
+    tensor_img = torch.tensor(arr.transpose(2,0,1), dtype=torch.float32).unsqueeze(0).to(device)  # ← float32
     with torch.no_grad():
         perturb = adv_model(tensor_img) * eps
         adv_img = tensor_img + perturb
@@ -103,11 +103,11 @@ level = st.selectbox("🎯 مستوى الحماية", ["خفيف","متوسط",
 
 if uploaded_file:
     img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="📷 الصورة الأصلية", use_column_width=True)
+    st.image(img, caption="📷 الصورة الأصلية", width=600)
 
     if st.button("🔒 حماية الصورة"):
         protected_img = protect_image_final(img, level)
-        st.image(protected_img, caption="🛡️ الصورة بعد الحماية", use_column_width=True)
+        st.image(protected_img, caption="🛡️ الصورة بعد الحماية", width=600)
 
         buf = io.BytesIO()
         protected_img.save(buf, format="PNG")
