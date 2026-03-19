@@ -2,3 +2,4 @@ streamlit
 pillow
 numpy
 scipy
+opencv-python
